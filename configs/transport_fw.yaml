@@ -1,0 +1,15 @@
+# Франк–Вульф (линеаризация). Штрафов нет => mu: 0.0 обязателен.
+oracle:
+  type: transport
+  m: 3
+  n: 3
+  seed: 42
+  mu: 0.0
+
+method:
+  type: fw
+  step_rule: exact     # exact | classic
+  max_iter: 20000
+  tol: 1.0e-8          # порог на FW-зазор (оценка f - f*)
+
+seed: 42
