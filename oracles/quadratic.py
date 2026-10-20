@@ -22,7 +22,7 @@ class QuadraticOracle(Oracle):
         self.name = f"quadratic(dim={dim}, kappa={kappa:g})"
         self._L = L
         self._mu = mu
-        self.x_star = np.linalg.solve(self.A, self.b)
+        self._x_star = np.linalg.solve(self.A, self.b)
         self._f_star = 0.5 * self._x_star @ self.A @ self._x_star - self.b @ self._x_star
 
     def f(self, x: np.ndarray) -> float:
