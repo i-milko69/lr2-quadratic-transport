@@ -1,0 +1,13 @@
+oracle:
+  type: transport
+  m: 3
+  n: 3
+  seed: 42
+  mu: 100.0
+
+method:
+  type: gd
+  max_iter: 5000
+  tol: 1.0e-6
+
+seed: 42
