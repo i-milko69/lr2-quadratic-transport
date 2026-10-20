@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from oracles import QuadraticOracle, LogisticOracle
+from oracles import QuadraticOracle, LogisticOracle, TransportOracle
 from methods import GD, AdaptiveStep
 
 
@@ -92,8 +92,11 @@ def run_checks(cfg):
 
 
 # ---------------------- runner ----------------------
-
-ORACLES = {"quadratic": QuadraticOracle, "logistic": LogisticOracle}
+ORACLES = {
+    "quadratic": QuadraticOracle,
+    "logistic": LogisticOracle,
+    "transport": TransportOracle,
+}
 METHODS = {"gd": GD, "adaptive": AdaptiveStep}
 
 
