@@ -22,17 +22,17 @@ class QuadraticOracle(Oracle):
         self.name = f"quadratic(dim={dim}, kappa={kappa:g})"
         self._L = L
         self._mu = mu
-        self._x_star = # TODO
+        self.x_star = np.linalg.solve(self.A, self.b)
         self._f_star = 0.5 * self._x_star @ self.A @ self._x_star - self.b @ self._x_star
 
     def f(self, x: np.ndarray) -> float:
         return 0.5 * x @ self.A @ x - self.b @ x
 
     def grad(self, x: np.ndarray) -> np.ndarray:
-        return # TODO
+        return self.A @ x - self.b
 
     def hess(self, x: np.ndarray) -> np.ndarray:
-        return # TODO
+        return self.A
 
     @property
     def info(self) -> OracleInfo:
