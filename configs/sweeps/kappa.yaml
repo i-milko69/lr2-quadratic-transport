@@ -1,0 +1,20 @@
+base:
+  oracle:
+    type: quadratic
+    dim: 50
+    kappa: 100
+    seed: 0
+  method:
+    type: gd
+    step: 0.01
+    max_iter: 10000
+    tol: 1e-6
+  run:
+    x0: zeros
+  seed: 42
+  out_dir: results/logs
+
+grid:
+  oracle.kappa: [10, 100, 1000, 10000]
+  method.type: [gd, adaptive]
+  method.step: [0.001, 0.01, 0.1]

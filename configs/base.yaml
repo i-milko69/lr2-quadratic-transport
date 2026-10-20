@@ -1,0 +1,19 @@
+# Base config. Concrete configs override fields here.
+oracle:
+  type: quadratic
+  dim: 50
+  kappa: 100
+  seed: 0
+
+method:
+  type: gd
+  step: 0.01
+  max_iter: 5000
+  tol: 1e-6
+
+run:
+  x0: zeros          # zeros | random
+  save_history: true
+
+seed: 42
+out_dir: results/logs

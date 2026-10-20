@@ -1,0 +1,23 @@
+import os
+import random
+import numpy as np
+
+
+def set_seed(seed: int = 42) -> None:
+    """Fix seeds for reproducibility across Python, NumPy, (optionally) torch."""
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    except ImportError:
+        pass
+
+
+def spawn_rng(seed: int) -> np.random.Generator:
+    """Independent RNG for reproducible synthetic data."""
+    return np.random.default_rng(seed)

@@ -1,0 +1,17 @@
+oracle:
+  type: quadratic
+  dim: 50
+  kappa: 100
+  seed: 0
+
+method:
+  type: gd
+  step: 0.01
+  max_iter: 5000
+  tol: 1.0e-6
+
+run:
+  x0: zeros
+
+seed: 42
+out_dir: results/logs

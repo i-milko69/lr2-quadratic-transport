@@ -1,0 +1,19 @@
+base:
+  oracle:
+    type: logistic
+    n: 500
+    dim: 20
+    l2: 1.0
+    seed: 0
+  method:
+    type: gd
+    step: 0.1
+    max_iter: 5000
+    tol: 1e-4
+  run:
+    x0: random
+  seed: 42
+
+grid:
+  seed: [0, 1, 2, 3, 4]
+  oracle.seed: [0, 1, 2]

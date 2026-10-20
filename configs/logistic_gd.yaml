@@ -1,0 +1,18 @@
+oracle:
+  type: logistic
+  n: 500
+  dim: 20
+  l2: 1.0
+  seed: 0
+
+method:
+  type: gd
+  step: 0.7
+  max_iter: 5000
+  tol: 1.0e-3
+
+run:
+  x0: zeros
+
+seed: 42
+out_dir: results/logs

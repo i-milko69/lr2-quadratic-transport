@@ -1,0 +1,15 @@
+base:
+  oracle:
+    type: quadratic
+    dim: 50
+    kappa: 1000
+    seed: 0
+  method:
+    type: gd
+    step: 0.01
+    max_iter: 5000
+    tol: 1e-6
+  seed: 42
+
+grid:
+  method.step: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05]
