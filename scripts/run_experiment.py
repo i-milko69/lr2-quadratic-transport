@@ -11,7 +11,7 @@ import numpy as np
 import yaml
 
 from oracles import QuadraticOracle, LogisticOracle, TransportOracle
-from methods import GD, AdaptiveStep, FrankWolfe
+from methods import GD, AdaptiveStep, FrankWolfe, PreconditionedGD
 
 # ---------------------- checks ----------------------
 
@@ -96,7 +96,7 @@ ORACLES = {
     "logistic": LogisticOracle,
     "transport": TransportOracle,
 }
-METHODS = {"gd": GD, "adaptive": AdaptiveStep, "fw": FrankWolfe}
+METHODS = {"gd": GD, "adaptive": AdaptiveStep, "fw": FrankWolfe, "pgd": PreconditionedGD}
 
 
 def _build_oracle(cfg):
