@@ -37,9 +37,12 @@ def distance_to_opt(oracle, x: np.ndarray) -> float | None:
 
 def condition_number(oracle, x: np.ndarray) -> float | None:
     """Local condition number from Hessian, if available."""
-    if not oracle.has_hess:
+    try:
+        H = oracle.hess(x)
+    except (AttributeError, NotImplementedError):
         return None
-    H = oracle.hess(x)
+    if H is None:
+        return None
     eigvals = np.linalg.eigvalsh(H)
     if eigvals.min() <= 0:
         return float("inf")
