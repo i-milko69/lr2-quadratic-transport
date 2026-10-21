@@ -9,8 +9,8 @@ class GD(Method):
     step: float or callable(oracle, x, g, state) -> float
     """
 
-    def init(self, oracle, step=None, max_iter=1000, tol=1e-8):
-        super().init(oracle, max_iter=max_iter, tol=tol)
+    def __init__(self, oracle, step=None, max_iter=1000, tol=1e-8):
+        super().__init__(oracle, max_iter=max_iter, tol=tol)
 
         if step is None:
             L = oracle.info.L
