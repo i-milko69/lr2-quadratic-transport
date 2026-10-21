@@ -28,27 +28,27 @@ class AdaptiveStep(Method):
         f_star = self.oracle.info.f_star
         if f_star is None:
             return self._eta
-        denom = # TODO
+        denom = float(g @ g) + 1e-12
         return max((f - f_star) / denom, 1e-12)
 
     def _bb(self, x, g, mode: int) -> float:
         if self._prev_grad is None:
             return self._eta
-        s = # TODO
-        y = # TODO
+        s = x - self._prev_x
+        y = g - self._prev_grad
         if mode == 1:
-            denom = # TODO
+            denom = float(s @ y) + 1e-12
             return float(s @ s) / denom
         denom = float(y @ y) + 1e-12
         return float(s @ y) / denom
 
     def _backtrack(self, x, g, direction) -> float:
         eta = self._eta
-        fx = # TODO
-        gx = # TODO
+        fx = self.oracle.f(x)
+        gx = float(g @ direction)
         for _ in range(50):
-            x_new = # TODO
-            if self.oracle.f(x_new) <= ... : # TODO
+            x_new = x + eta * direction
+            if self.oracle.f(x_new) <= fx + self.beta_arm * eta * gx:
                 break
             eta *= self.alpha
         return eta
@@ -73,6 +73,6 @@ class AdaptiveStep(Method):
         self._eta = step
 
         state["x_prev"] = x
-        state["x"] = # TODO
+        state["x"] = x + step * direction
         state["step"] = step
         return state
