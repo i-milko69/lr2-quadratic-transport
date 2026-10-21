@@ -28,7 +28,7 @@ def generate_data(m=3, n=3, seed=42):
     return a, b, s, d
 
 
-def f(x, a, b, s, d, mu=100.0):
+def f(x, a, b, s, d, mu=100.0, penalty_nonnegative=True):
     """Вычисляет целевую функцию транспортной задачи со штрафами."""
     x = np.asarray(x).reshape(a.shape)
 
@@ -42,15 +42,17 @@ def f(x, a, b, s, d, mu=100.0):
     # Штрафуем за нарушение баланса и отрицательные перевозки.
     penalty_rows = np.sum(row_diff**2)
     penalty_cols = np.sum(col_diff**2)
-    penalty_neg = np.sum(np.maximum(0.0, -x)**2)
+    penalty_neg = np.sum(np.maximum(0.0, -x) ** 2)
 
-    # Складываем стоимость перевозок и все штрафы.
+    if not penalty_nonnegative:
+        penalty_neg = 0.0
+
     return f_orig + 0.5 * mu * (
         penalty_rows + penalty_cols + penalty_neg
     )
 
 
-def grad(x, a, b, s, d, mu=100.0):
+def grad(x, a, b, s, d, mu=100.0, penalty_nonnegative=True):
     """Вычисляет градиент целевой функции со штрафами."""
     x = np.asarray(x).reshape(a.shape)
 
@@ -67,17 +69,20 @@ def grad(x, a, b, s, d, mu=100.0):
 
     # Градиент штрафа за отрицательные объёмы перевозок.
     grad_neg = np.minimum(x, 0.0)
+    if not penalty_nonnegative:
+        grad_neg = np.zeros_like(x)
 
     # Возвращаем сумму градиентов исходной функции и штрафов.
-    return grad_orig + mu * (
-        grad_rows + grad_cols + grad_neg
+    return (
+        grad_orig 
+        + mu * (grad_rows + grad_cols + grad_neg)
     )
 
 
 class TransportOracle(Oracle):
     """Оракул транспортной задачи с квадратичными штрафами."""
 
-    def __init__(self, m=3, n=3, seed=42, mu=100.0):
+    def __init__(self, m=3, n=3, seed=42, mu=100.0, penalty_nonnegative=True):
         # Создаём данные транспортной задачи.
         self.a, self.b, self.s, self.d = generate_data(
             m=m, n=n, seed=seed
@@ -86,6 +91,7 @@ class TransportOracle(Oracle):
         self.m = m
         self.n = n
         self.penalty = float(mu)
+        self.penalty_nonnegative = bool(penalty_nonnegative)
         self.dim = m * n
         self.name = "transport"
 
@@ -94,15 +100,17 @@ class TransportOracle(Oracle):
         self._L = float(np.max(self.b)) + self.penalty * (m + n + 1)
 
     def f(self, x):
-        """Возвращает значение целевой функции."""
-        return float(f(
-            x, self.a, self.b, self.s, self.d, self.penalty
-        ))
+        return float(
+            f(
+                x, self.a, self.b, self.s, self.d,
+                self.penalty, self.penalty_nonnegative
+            )
+        )
 
     def grad(self, x):
-        """Возвращает градиент в виде одномерного массива."""
         return grad(
-            x, self.a, self.b, self.s, self.d, self.penalty
+            x, self.a, self.b, self.s, self.d,
+            self.penalty, self.penalty_nonnegative
         ).ravel()
 
     def hess(self, x):
