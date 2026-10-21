@@ -1,7 +1,4 @@
-"""Проверка штрафного оракула транспортной задачи (пункт 3).
 
-Запуск из корня репозитория:  python scripts/check_penalty.py
-"""
 import os
 import sys
 
