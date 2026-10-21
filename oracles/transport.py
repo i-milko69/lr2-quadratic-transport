@@ -129,6 +129,10 @@ class TransportOracle(Oracle):
 
         return H
 
+    def hess_diag(self, x):
+        x = np.asarray(x).ravel()
+        return self.b.ravel() + 2.0 * self.penalty + self.penalty * (x < 0)
+
     @property
     def info(self):
         """Возвращает параметры, необходимые методу оптимизации."""
