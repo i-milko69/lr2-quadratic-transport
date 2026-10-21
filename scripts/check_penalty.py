@@ -53,8 +53,8 @@ def reference_solution_exact(o):
     return x, a @ x + 0.5 * np.sum(b * x**2)
     
 def reference_solution(o):
-    """f* исходной задачи (с ограничениями) через SLSQP."""
-        exact = reference_solution_exact(o)
+    """f* исходной задачи (с ограничениями): сначала точный KKT, иначе SLSQP."""
+    exact = reference_solution_exact(o)
     if exact is not None:
         return exact
     A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
