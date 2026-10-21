@@ -43,9 +43,20 @@ def newton_solve(o, x0, iters=100, tol=1e-10):
         x = x - np.linalg.solve(o.hess(x), g)
     return x
 
-
+def reference_solution_exact(o):
+    A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
+    a, b = o.a.ravel(), o.b.ravel()
+    K = np.block([[np.diag(b), A.T], [A, np.zeros((len(r), len(r)))]])
+    x = np.linalg.lstsq(K, np.concatenate([-a, r]), rcond=None)[0][:o.dim]
+    if x.min() < 0:
+        return None
+    return x, a @ x + 0.5 * np.sum(b * x**2)
+    
 def reference_solution(o):
     """f* исходной задачи (с ограничениями) через SLSQP."""
+        exact = reference_solution_exact(o)
+    if exact is not None:
+        return exact
     A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
     a, b = o.a.ravel(), o.b.ravel()
     res = minimize(lambda x: a @ x + 0.5 * np.sum(b * x**2), np.full(o.dim, r[:o.m].sum() / o.dim),
