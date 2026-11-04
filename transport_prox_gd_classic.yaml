@@ -1,0 +1,15 @@
+# Классическая постановка (склады вывозят весь запас) + проекция на x >= 0.
+oracle:
+  type: transport
+  m: 3
+  n: 3
+  seed: 42
+  mu: 1000.0
+  penalty_nonnegative: false
+
+method:
+  type: prox_gd
+  max_iter: 300000
+  tol: 1.0e-6
+
+seed: 42

@@ -1,0 +1,16 @@
+# Prox-GD с ограничениями по объёму склада: sum_j x_ij <= C_i = s_i (1 + slack).
+# x >= 0 и ёмкости учитываются проекцией (prox), штрафуется только спрос.
+oracle:
+  type: transport
+  m: 3
+  n: 3
+  seed: 42
+  mu: 1000.0
+  capacity_slack: 0.2
+
+method:
+  type: prox_gd
+  max_iter: 300000
+  tol: 1.0e-6          # норма проксимального отображения градиента
+
+seed: 42
