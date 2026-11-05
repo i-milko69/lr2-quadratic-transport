@@ -22,11 +22,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import linprog
+from scipy.optimize import linprog, minimize
 
 from methods.gd import GD
 from oracles.transport import TransportOracle
-from scripts.check_penalty import constraint_matrix, newton_solve, reference_solution
+from scripts.check_penalty import constraint_matrix, newton_solve
 from utils.metrics import condition_number
 
 OUT = "figures"
@@ -37,44 +37,53 @@ def f_orig(o, x):
     return float(o.a.ravel() @ x + 0.5 * np.sum(o.b.ravel() * x**2))
 
 
-def exact_equality_qp(o):
-    """Точное решение задачи при Ax = r (без x >= 0) из системы KKT:
-        diag(b) x + A^T lam = -a,   A x = r.
-    Если все x_ij >= 0, это и есть решение исходной задачи (x >= 0 не активно).
+def scipy_reference(o):
+    """Эталон f*: scipy.optimize.minimize (SLSQP) на ИСХОДНОЙ задаче с ограничениями.
+
+    Важно: уравнений баланса m+n, но независимых только m+n-1 (sum s = sum d),
+    а SLSQP плохо переносит линейно зависимые ограничения (без этого он
+    останавливается с ошибкой 0.02-5 по f). Поэтому убираем последнюю строку.
     """
     A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
-    k = A.shape[0]
-    K = np.block([[np.diag(o.b.ravel()), A.T], [A, np.zeros((k, k))]])
-    rhs = np.concatenate([-o.a.ravel(), r])
-    x = np.linalg.lstsq(K, rhs, rcond=None)[0][:o.dim]   # A неполного ранга -> lstsq
-    return x
+    Ae, re = A[:-1], r[:-1]
+    a, b = o.a.ravel(), o.b.ravel()
+    res = minimize(lambda x: a @ x + 0.5 * np.sum(b * x**2),
+                   np.full(o.dim, r[:o.m].sum() / o.dim),
+                   jac=lambda x: a + b * x, method="SLSQP",
+                   bounds=[(0, None)] * o.dim,
+                   constraints={"type": "eq", "fun": lambda x: Ae @ x - re, "jac": lambda x: Ae},
+                   options={"ftol": 1e-14, "maxiter": 1000})
+    assert res.success, f"SLSQP не сошёлся: {res.message}"
+    return res.x, float(res.fun)
+
+
+def cvxpy_reference(o):
+    """Тот же f* через cvxpy; None, если cvxpy не установлен."""
+    try:
+        import cvxpy as cp
+    except ImportError:
+        return None
+    A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
+    x = cp.Variable(o.dim)
+    obj = o.a.ravel() @ x + 0.5 * cp.sum(cp.multiply(o.b.ravel(), cp.square(x)))
+    pb = cp.Problem(cp.Minimize(obj), [A @ x == r, x >= 0])
+    pb.solve()
+    return float(pb.value)
 
 
 def reference(o):
-    """f* точно (KKT), SLSQP как перекрёстная проверка, LP как нижняя граница."""
+    """f*: scipy (основной), cvxpy (если есть) и LP (sanity check, нижняя граница)."""
     A, r = constraint_matrix(o.m, o.n), np.concatenate([o.s, o.d])
-    x_slsqp, f_slsqp = reference_solution(o)
-    x_ref = exact_equality_qp(o)
-    if x_ref.min() < -1e-9:           # x >= 0 активно -> KKT неприменим, берём SLSQP
-        x_ref, f_ref = x_slsqp, f_slsqp
-    else:
-        f_ref = f_orig(o, x_ref)
-    # LP с b=0: нижняя граница, т.к. b >= 0  =>  f_LP* <= f*
+    x_ref, f_ref = scipy_reference(o)
+    # sanity check: LP при b = 0. Так как b >= 0, стоимость LP не больше f*.
     lp = linprog(o.a.ravel(), A_eq=A, b_eq=r, bounds=(0, None), method="highs")
-    info = {"f_exact": f_ref, "f_slsqp": f_slsqp,
-            "slsqp_error": float(f_slsqp - f_ref),     # у SLSQP может быть недосходимость
-            "f_lp_lower": lp.fun,
-            "viol_exact": float(np.abs(A @ x_ref - r).max()),
-            "min_x_exact": float(x_ref.min())}
-    try:
-        import cvxpy as cp
-        x = cp.Variable(o.dim)
-        pb = cp.Problem(cp.Minimize(o.a.ravel() @ x + 0.5 * cp.sum(cp.multiply(o.b.ravel(), cp.square(x)))),
-                        [A @ x == r, x >= 0])
-        pb.solve()
-        info["f_cvxpy"] = float(pb.value)
-    except ImportError:
-        pass
+    info = {"f_scipy": f_ref, "f_lp_lower": lp.fun,
+            "viol_scipy": float(np.abs(A @ x_ref - r).max()),
+            "min_x_scipy": float(x_ref.min())}
+    f_cvx = cvxpy_reference(o)
+    if f_cvx is not None:
+        info["f_cvxpy"] = f_cvx
+        assert abs(f_cvx - f_ref) < 1e-4 * max(1.0, abs(f_ref)), "scipy и cvxpy не совпали"
     assert info["f_lp_lower"] <= f_ref + 1e-8, "LP-граница выше f*: эталон неверен"
     return x_ref, f_ref, info
 
@@ -113,7 +122,7 @@ def run(m, n, seed, mus, tol, eps_gap, max_iter):
     r = np.concatenate([o0.s, o0.d])
     _, f_star, ref_info = reference(o0)
 
-    rows, hists = [], {}
+    rows, hists, devs = [], {}, {}
     for mu in mus:
         o = TransportOracle(m, n, seed, mu=mu)
         x_mu = newton_solve(o, np.zeros(o.dim))            # точный минимум F_mu
@@ -133,45 +142,124 @@ def run(m, n, seed, mus, tol, eps_gap, max_iter):
             "gd_residual_final": float(np.linalg.norm(A @ x_end - r)),
         })
         hists[mu] = np.array(f_hist) - F_mu_star
+        devs[mu] = A @ x_mu - r              # недовоз/перевоз по каждому складу и магазину
         print(f"mu={mu:8g} cond={rows[-1]['cond_H']:.2e} res={rows[-1]['residual']:.2e} "
               f"f-f*={rows[-1]['f_minus_fstar']:+.2e} "
               f"GD iters: gap={rows[-1]['gd_iters_gap']} grad={rows[-1]['gd_iters_grad']}")
-    return f_star, ref_info, rows, hists
+    return f_star, ref_info, rows, hists, devs
 
 
-def make_plots(rows, hists, tag, crit="gap"):
+def _num(v):
+    """'>300000' -> 300000 (для нерасшедшихся точек), число остаётся числом."""
+    return int(str(v).lstrip(">")) if isinstance(v, str) else v
+
+
+def _save(fig, name, tag):
     os.makedirs(OUT, exist_ok=True)
+    fig.savefig(f"{OUT}/{name}_{tag}.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _setup(ax, title, xlabel="μ (коэффициент штрафа)", ylabel=None):
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.grid(True, which="both", alpha=.25)
+    ax.set_title(title, fontsize=11); ax.set_xlabel(xlabel)
+    if ylabel:
+        ax.set_ylabel(ylabel)
+
+
+def _ref(ax, mus, ys, power, label):
+    """Пунктир-ориентир: y ~ mu^power, проведён через последнюю точку (чуть смещён)."""
+    mus, ys = np.array(mus, float), np.array(ys, float)
+    y_ref = ys[-1] * (mus / mus[-1]) ** power * 2.2
+    ax.plot(mus, y_ref, "--", color="gray", lw=1, label=label)
+
+
+def make_plots(rows, hists, devs, tag, crit="gap", eps_gap=1e-4, m=3, n=3):
     mus = [r["mu"] for r in rows]
+    C, R, Q = "#1f77b4", "#d62728", "#ff7f0e"
 
+    # 1. обусловленность
+    cond = [r["cond_H"] for r in rows]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.loglog(mus, [r["cond_H"] for r in rows], "o-", label="cond(H) в x*_mu")
-    ax.set_xlabel("mu"); ax.set_ylabel("cond(H)"); ax.grid(True, which="both", alpha=.3)
-    ax.set_title("Обусловленность растёт с mu"); ax.legend()
-    fig.savefig(f"{OUT}/cond_vs_mu_{tag}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.plot(mus, cond, "o-", color=C, label="cond(H) в x*_μ")
+    _ref(ax, mus, cond, 1, "ориентир: ∝ μ (наклон 1)")
+    for x, y in zip(mus, cond):
+        ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8)
+    _setup(ax, "Обусловленность растёт пропорционально μ", ylabel="cond(H) = λ_max / λ_min")
+    ax.legend(); _save(fig, "cond_vs_mu", tag)
 
+    # 2. точность ограничений и качество
+    res = [r["residual"] for r in rows]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.loglog(mus, [r["residual"] for r in rows], "o-", label="||Ax - r||")
-    ax.loglog(mus, [abs(r["f_minus_fstar"]) for r in rows], "s-", label="|f - f*|")
-    ax.set_xlabel("mu"); ax.grid(True, which="both", alpha=.3); ax.legend()
-    ax.set_title("Качество решения исходной задачи")
-    fig.savefig(f"{OUT}/quality_vs_mu_{tag}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.plot(mus, res, "o-", color=R, label="невязка ‖Ax − r‖")
+    ax.plot(mus, [abs(r["f_minus_fstar"]) for r in rows], "s-", color=Q, label="|f − f*|")
+    _ref(ax, mus, res, -1, "ориентир: ∝ 1/μ (наклон −1)")
+    for x, y in zip(mus, res):
+        ax.annotate(f"{y:.2g}", (x, y), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8, color=R)
+    _setup(ax, "Ограничения выполняются тем точнее, чем больше μ")
+    ax.legend(); _save(fig, "quality_vs_mu", tag)
 
+    # 3. итерации GD (не сошедшиеся точки показываем у потолка max_iter)
+    key = f"gd_iters_{crit}"; ok = f"gd_converged_{crit}"
+    crit_txt = (f"F_μ − F_μ* ≤ {eps_gap:g}" if crit == "gap" else "‖∇F‖ ≤ 1e-6·‖∇F(x₀)‖")
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.loglog(mus, [r[f"gd_iters_{crit}"] if r[f"gd_converged_{crit}"] else np.nan for r in rows], "o-")
-    for r in rows:
-        if not r[f"gd_converged_{crit}"]:
-            ax.annotate("не сошёлся", (r["mu"], 1), color="red", fontsize=8)
-    ax.set_xlabel("mu"); ax.set_ylabel("итераций GD: F-F* <= eps" if crit == "gap" else "итераций GD: ||grad|| <= tol*||grad(x0)||")
-    ax.grid(True, which="both", alpha=.3); ax.set_title("Число итераций GD (шаг 1/L)")
-    fig.savefig(f"{OUT}/iters_vs_mu_{tag}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    good = [(r["mu"], r[key]) for r in rows if r[ok]]
+    bad = [(r["mu"], _num(r[key])) for r in rows if not r[ok]]
+    ax.plot(*zip(*good), "o-", color=C, label="GD, шаг 1/L")
+    if bad:
+        ax.plot(*zip(*bad), "x", color=R, ms=10, mew=2, label="не сошёлся за лимит итераций")
+        for x, y in bad:
+            ax.annotate(f">{y}", (x, y), textcoords="offset points", xytext=(0, -14), ha="center", fontsize=8, color=R)
+    for x, y in good:
+        ax.annotate(f"{y}", (x, y), textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8)
+    _ref(ax, [g[0] for g in good], [g[1] for g in good], 1, "ориентир: ∝ μ")
+    _setup(ax, f"Число итераций GD ({crit_txt})", ylabel="итераций")
+    ax.legend(loc="lower right", fontsize=8); _save(fig, "iters_vs_mu", tag)
 
+    # 4. кривые сходимости
     fig, ax = plt.subplots(figsize=(7, 4))
     for mu, d in hists.items():
-        ax.semilogy(np.maximum(d, 1e-16), label=f"mu={mu:g}")
+        ax.semilogy(np.maximum(d, 1e-16), label=f"μ = {mu:g}")
+    ax.axhline(eps_gap, ls="--", color="gray", lw=1)
+    ax.text(0.99, eps_gap * 1.5, f"порог ε = {eps_gap:g}", transform=ax.get_yaxis_transform(), ha="right", fontsize=8, color="gray")
     ax.set_xscale("symlog", linthresh=10)
-    ax.set_xlabel("итерация"); ax.set_ylabel("F_mu(x_k) - F_mu*")
-    ax.grid(True, which="both", alpha=.3); ax.legend(); ax.set_title("Сходимость GD")
-    fig.savefig(f"{OUT}/convergence_{tag}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    ax.set_xlabel("итерация GD"); ax.set_ylabel("F_μ(x_k) − F_μ*")
+    ax.grid(True, which="both", alpha=.25); ax.legend(); ax.set_title("Сходимость GD: чем больше μ, тем медленнее")
+    _save(fig, "convergence", tag)
+
+    # 5. компромисс: точность против стоимости вычислений
+    fig, ax = plt.subplots(figsize=(6, 4.3))
+    xs = [_num(r[key]) for r in rows]; ys = res
+    ax.plot(xs, ys, "-", color="gray", lw=1, zorder=1)
+    for r, x, y in zip(rows, xs, ys):
+        done = r[ok]
+        ax.scatter([x], [y], s=70, zorder=2, color=C if done else "white", edgecolor=C if done else R, linewidth=2)
+        ax.annotate(f"μ={r['mu']:g}" + ("" if done else "\n(не сошёлся)"), (x, y),
+                    textcoords="offset points", xytext=(8, 6), fontsize=8)
+    _setup(ax, "Компромисс: точнее ограничения — больше итераций",
+           xlabel="итераций GD (стоимость вычислений)", ylabel="невязка ‖Ax − r‖ (ошибка ограничений)")
+    ax.margins(x=0.15, y=0.15)
+    _save(fig, "tradeoff", tag)
+
+    # 6. что такое невязка физически: недовоз/перевоз по каждому складу и магазину
+    pick = [mu for mu in mus if mu in (1, 10, 100, 1000)] or mus[:4]
+    cols = 2; rws = int(np.ceil(len(pick) / cols))
+    fig, axs = plt.subplots(rws, cols, figsize=(8, 3.2 * rws), squeeze=False)
+    names = [f"Склад {i+1}" for i in range(m)] + [f"Магазин {j+1}" for j in range(n)]
+    if m + n > 8:
+        names = [f"С{i+1}" for i in range(m)] + [f"М{j+1}" for j in range(n)]
+    for ax, mu in zip(axs.ravel(), pick):
+        d = devs[mu]
+        ax.bar(range(len(d)), d, color=[Q if v < 0 else C for v in d])
+        ax.axhline(0, color="black", lw=.8); ax.axvline(m - .5, color="gray", ls=":")
+        ax.set_xticks(range(len(d))); ax.set_xticklabels(names, rotation=45, ha="right", fontsize=7)
+        ax.set_title(f"μ = {mu:g}:  ‖Ax − r‖ = {np.linalg.norm(d):.3g}", fontsize=10)
+        ax.set_ylabel("(Ax − r)ᵢ, ед. груза"); ax.grid(axis="y", alpha=.25)
+    for ax in axs.ravel()[len(pick):]:
+        ax.axis("off")
+    fig.suptitle("Невязка по ограничениям: оранж. — недовоз/недопоставка, синий — перевоз/излишек\n(масштаб оси Y в каждой панели свой: с ростом μ столбцы уменьшаются в разы)", fontsize=10)
+    fig.tight_layout(); _save(fig, "imbalance", tag)
 
 
 if __name__ == "__main__":
@@ -186,13 +274,13 @@ if __name__ == "__main__":
     a = p.parse_args()
 
     mus = [1, 10, 100, 1e3, 1e4]
-    f_star, info, rows, hists = run(a.m, a.n, a.seed, mus, a.tol, a.eps_gap, a.max_iter)
-    print(f"\nf* (точное, KKT) = {f_star:.8f}; проверки: {info}")
+    f_star, info, rows, hists, devs = run(a.m, a.n, a.seed, mus, a.tol, a.eps_gap, a.max_iter)
+    print(f"\nf* (scipy) = {f_star:.8f}; проверки: {info}")
 
     tag = f"m{a.m}n{a.n}s{a.seed}"
     os.makedirs(OUT, exist_ok=True)
     with open(f"{OUT}/metrics_table_{tag}.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader(); w.writerows(rows)
-    make_plots(rows, hists, tag, a.criterion)
+    make_plots(rows, hists, devs, tag, a.criterion, a.eps_gap, a.m, a.n)
     print(f"Таблица и графики сохранены в {OUT}/")
